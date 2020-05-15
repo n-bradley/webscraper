@@ -4,10 +4,13 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import numpy as np
 import pickle
+import datetime as dt 
+
 
 
 
 #%%
+
 def homepage_soup():
     r1 =  requests.get("https://www.marketwatch.com/")
     homepage = r1.content
@@ -15,8 +18,131 @@ def homepage_soup():
 
 #%%
 
+def get_soup(url):
+    r1 =  requests.get(url)
+    homepage = r1.content
+    return BeautifulSoup(homepage, 'html5lib')
+
+
+#%%
+soup = get_soup("https://www.marketwatch.com/markets")
+soup
+
+#%%
+
+
+#%%
+
+
+def get_markets_articles(soup):
+    headlines = soup.find('div', class_='group group--headlines')
+    headlines = headlines.find_all('div', class_='article__content')
+    return headlines
+    
+
+
+    
+headline_soup = get_markets_articles(soup)
+headline_soup
+
+
+#%%
+def get_markets_headlines(headline_soup):
+    headlines = {
+    'links' : [],
+    'titles' : [],
+    'summaries' : [],
+    'timestamps' : [],
+    'authors' : [],
+    }
+
+    for headline in headline_soup:
+        headlines['links'].append(headline.find('a', class_='link')['href']) # article link
+        headlines['titles'].append(headline.find('a').get_text().strip()) # article title
+        headlines['summaries'].append(headline.find('p', class_='article__summary').get_text().strip()) # article summary
+        details = headline.find('div', class_='article__details')
+        if details:
+            headlines['timestamps'].append(headline.find('div', class_='article__details').find('span', class_='article__timestamp')['data-est'])
+            headlines['authors'].append(headline.find('div', class_='article__details')\
+                                .find('span', class_='article__author').get_text())
+        else:
+            headlines['timestamps'].append('no details')
+            headlines['authors']
+    
+    return headlines
+
+markets_headlines = get_markets_headlines(headline_soup)
+
+#%%
+
+def _get_article_soup(link):
+    req = requests.get(link)
+    article_page = req.content
+    return BeautifulSoup(article_page, 'html5lib')
+
+def clean_article_text(text):
+    cleantext = ''
+    for t in text:
+        t = t.replace('  ','').replace('\n',' ')
+        cleantext += (t+'\n')
+    cleantext = cleantext
+    return cleantext
+
+def get_article_text(link):
+    content = _get_article_soup(link).find('div', class_='column column--full article__content' )
+    
+    article_text = []
+    if content:
+        for para in content.find_all('p'):
+            article_text.append(para.get_text())
+        article_text = clean_article_text(article_text)
+    else:
+        article_text = ''
+        
+    
+    return article_text
+
+def get_article_stocks(link):
+    content = _get_article_soup(link).find_all('span', class_='symbol')
+
+    article_stock_links = []
+    symbols = [x.get_text() for x in content]
+
+    return symbols
+
+def get_link_content(headlines):
+    headlines['text'] = []
+    headlines['stocks'] = []
+    
+    for link in headlines['links']:
+        headlines['text'].append(get_article_text(link))
+        headlines['stocks'].append(get_article_stocks(link))
+    
+    return headlines
+
+markets_data = pd.DataFrame(get_link_content(markets_headlines))
+#%%
+markets_data
+#%%
+
+def update_article_master(master_path, new_data):
+    new_data['timestamp'] = dt.datetime.now()
+    try:
+        df = pd.read_pickle(master_path)
+        df = df.append(new_data, ignore_index=True)
+        df.to_pickle(master_path)
+    except:
+        df = new_data
+        df.to_pickle(master_path)
+    return df
+
+
+update_article_master('markets_master.pkl', markets_data)
+
+#%%
+
 def get_article_links():
-    coverpage_articles =homepage_soup().find_all('div', class_='article__content')
+    coverpage_articles = homepage_soup().find_all('div', class_='article__content')
     articles = {}
 
     #get headline
@@ -37,6 +163,8 @@ def get_article_links():
     return articles
 
 articles = get_article_links()
+
+#%%
 
 
 #%%
@@ -191,10 +319,10 @@ wc = WordCloud(stopwords=stop_words, background_color="white", colormap="Dark2",
 
 import matplotlib.pyplot as plt
 
-plt.rcParams['figure.figsize'] = [168, 6]
+plt.rcParams['figure.figsize'] = [16, 6]
 
 
-# Create subplots for each comedian
+# Create subplots for each article
 for index, article in enumerate(data.columns):
     wc.generate(data_clean.clean_text[article])
     
@@ -204,3 +332,25 @@ for index, article in enumerate(data.columns):
     plt.title(index)
     
 plt.show()
+
+#%% lets do some sentiment analysis
+from textblob import TextBlob
+
+#%% 
+
+def update_article_master(master_path, new_data):
+    new_data['timestamp'] = dt.datetime.now()
+    try:
+        df = pd.read_pickle(master_path)
+        df = df.append(new_data, ignore_index=True)
+        df.to_pickle(master_path)
+    except:
+        df = new_data
+        df.to_pickle(master_path)
+    return df
+
+update_article_master('article_master.pkl', df)
+
+#%%
+
+
